@@ -12,6 +12,8 @@
  * element with the tracking syntax found below. The name
  * of the attribute can be configured when activating the
  * behaviour.
+ * This will send a request to google as soon as someone
+ * clicks on the element.
  *
  * Example html:
  *   <a href="/some/url" data-analytics="trackEvent:/i/clicked/here">link</a>
@@ -23,6 +25,13 @@
  * Tracking via onLoad
  * ===================
  *
+ * To enable this behaviour, simply add an attribute to any
+ * element with the tracking syntax found below. The name
+ * of the attribute can be configured when activating the
+ * behaviour.
+ * This will send an request to google as soon as the 
+ * document has been loaded. 
+ *
  * Example html:
  *   <body data-analytics="trackPageView:/funnel/started">
  *
@@ -33,7 +42,22 @@
  * Tracking page render time
  * =========================
  *
- * 
+ * To enable this behavior, add a javascript variable
+ * called _sf_startpt with the current time to the html 
+ * head section like this.
+ *
+ * <script type="text/javascript">
+ *   var _sf_startpt=(new Date()).getTime();
+ * </script>
+ *
+ * This will send an event called page/render_time/<seconds>
+ * to analytics. This is the time the browser needed to wait
+ * until the page has been fully loaded.
+ *
+ * Activate the behaviour by adding:
+ *   Event.observe(window, 'load', MP_Analytics.TrackRenderTime);
+ *
+ *
  * Tracking Syntax
  * ===============
  * 
@@ -56,7 +80,6 @@
  * Be sure to check Google Analytics first before adding new
  * categories/actions/labels (e.g. stick to the current ones,
  * don't invent new ones unless you're sure what you're doing).
- * 
  * 
  *
  * Tracking virtual pages is just an url
@@ -151,8 +174,3 @@ MP_Analytics.TrackRenderTime = function() {
   GoogleAnalytics.trackEventCallback({ category: 'page', action: 'render_time', label: label, value: null })();
 }
 
-
-// Event.addBehavior({'a[data-analytics]'    : MP_Analytics.OnClick('data-analytics') });
-// Event.addBehavior({'body[data-analytics]' : MP_Analytics.OnLoad('data-analytics') });
-// 
-// Event.observe(window, 'load', MP_Analytics.TrackRenderTime);
