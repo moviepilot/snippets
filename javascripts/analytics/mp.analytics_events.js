@@ -146,12 +146,13 @@ MP_Analytics.OnLoad = Behavior.create(MP_Analytics.Base, {
 });
 
 
-MP_Analytics.TrackRenderTime = function( variableName ) {
-  
+MP_Analytics.TrackRenderTime = function() {
+  label    = parseInt(((new Date()).getTime() - _sf_startpt) / 1000) + "";
+  GoogleAnalytics.trackEventCallback({ category: 'page', action: 'render_time', label: label, value: null })();
 }
 
 
-Event.addBehavior({'a[data-analytics]'    : MP_Analytics.OnClick('data-analytics') });
-Event.addBehavior({'body[data-analytics]' : MP_Analytics.OnLoad('data-analytics') });
-
-Event.observe(window, 'load', MP_Analytics.TrackRenderTime);
+// Event.addBehavior({'a[data-analytics]'    : MP_Analytics.OnClick('data-analytics') });
+// Event.addBehavior({'body[data-analytics]' : MP_Analytics.OnLoad('data-analytics') });
+// 
+// Event.observe(window, 'load', MP_Analytics.TrackRenderTime);
