@@ -1,0 +1,14 @@
+# IP-Adressen, auf denen externe Dienste laufen
+HOST_EXT_IP="1.2.3.4"
+
+# Das interne Netz, das generell Vertrauenswuerdig ist
+HOST_INT_NET="10.0.0.0/24"
+
+# Dienste auf den externen IP-Adressen
+# Diese Dienste werden generell freigeschaltet
+HOST_EXT_SERVICES="1.2.3.4,tcp,http"
+
+# Vertrauenswuerdige IP-Adressen fuer besondere Dienste
+# Diese Dienste werden pro entsprechender eingehender IP freigeschaltet
+HOST_TRUSTED_SERVICES="2.3.4.5,tcp,ssh"
+

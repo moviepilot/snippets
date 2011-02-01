@@ -1,0 +1,204 @@
+#!/bin/bash
+
+### BEGIN INIT INFO
+# Provides:          firewall
+# Required-Start:    $network
+# Required-Stop:
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: init-Script for system wide firewall 
+### END INIT INFO
+
+. /lib/lsb/init-functions
+
+FWCONFIG="/etc/firewall"
+IPTABLES=`which iptables`  || IPTABLES="/usr/sbin/iptables"
+DEBUG="echo iptables "
+AWK=`which awk`            || AWK="/usr/bin/awk"
+SED=`which sed`            || SED="/usr/bin/sed"
+GREP=`which grep`          || GREP="/usr/bin/grep"
+
+    
+#############
+#           #
+# Functions #
+#           #
+#############
+function reset_rules() {
+        log_success_msg "Clearing rules" "firewall"
+
+        $IPTABLES -F INPUT
+        $IPTABLES -F OUTPUT
+        $IPTABLES -F FORWARD
+        $IPTABLES -P INPUT ACCEPT
+        $IPTABLES -P OUTPUT ACCEPT
+        $IPTABLES -P FORWARD ACCEPT
+        $IPTABLES -F
+        $IPTABLES -X
+
+	$IPTABLES -t mangle -F
+	$IPTABLES -t mangle -X
+}
+
+start_firewall() {
+    log_success_msg "Starting firewall..." "initialize"
+
+    test -e "$FWCONFIG" || {
+        log_success_msg "$FWCONFIG not found, exiting"
+        exit 1
+    }
+    . $FWCONFIG
+
+    for i in "$GREP" "$AWK" "$SED"; do
+        test -x $i || { 
+            log_success_msg "I need $i for running but can not find it, aborting."
+            exit 1
+        }
+    done
+
+    ACCEPT="ACCEPT"
+    DROP="DROP"
+    REJECT="REJECT"
+
+    test "$1" = start -a "$2" = test && {
+        DROP="ACCEPT"
+        REJECT="ACCEPT"
+        FW_LOG_DROP_ALL=yes
+        FW_LOG_DROP_CRIT=yes
+        FW_LOG_ACCEPT_ALL=no
+        FW_LOG_ACCEPT_CRIT=no
+        log_success_msg "Warning: firewall is running in TEST MODE, no packet filtering is done!"
+    }
+
+    test "$1" = start -a "$2" = debug && {
+        IPTABLES="$DEBUG"
+    }
+
+    # Startup
+
+    $IPTABLES -F INPUT
+    $IPTABLES -F OUTPUT
+    $IPTABLES -F FORWARD
+
+    # Ausgehenden Traffic akzeptieren
+
+    $IPTABLES -P INPUT DROP
+    $IPTABLES -P OUTPUT ACCEPT
+    $IPTABLES -P FORWARD ACCEPT
+
+    $IPTABLES -F
+    $IPTABLES -X
+
+    $IPTABLES -t mangle -F
+    $IPTABLES -t mangle -X
+
+    # Interner Kram
+
+    $IPTABLES -A INPUT -i lo -j ACCEPT
+    $IPTABLES -A OUTPUT -o lo -j ACCEPT
+
+    # Spoofing
+    for EXTIP in $HOST_EXT_IP ; do
+	$IPTABLES -A INPUT -s $EXTIP -j DROP
+    done
+
+     # Direktes Blockieren - Vorsicht
+#    $IPTABLES -A INPUT -f -j DROP
+#    $IPTABLES -A INPUT -p tcp --tcp-flags ALL ALL -j DROP
+#    $IPTABLES -A INPUT -p tcp --tcp-flags ALL NONE -j DROP
+#    $IPTABLES -A INPUT -s 0.0.0.0/8 -j DROP
+#    $IPTABLES -A INPUT -s 127.0.0.0/8 -j DROP
+
+    # Allen internen Traffic akzeptieren
+    test -n "$HOST_INT_NET" && {
+        for INT_NETS in $HOST_INT_NET ; do
+            $IPTABLES -A INPUT -s $INT_NETS -d $INT_NETS -j ACCEPT
+            $IPTABLES -A OUTPUT -d $INT_NETS -s $INT_NETS -j ACCEPT
+        done
+    }
+
+    # Ping
+    $IPTABLES -A INPUT -j ACCEPT -p icmp --icmp-type echo-request
+    for TYPE in echo-reply destination-unreachable time-exceeded parameter-problem timestamp-reply address-mask-reply; do
+	$IPTABLES -A INPUT -j ACCEPT -m state --state ESTABLISHED,RELATED -p icmp --icmp-type $TYPE
+    done
+
+    # traceroute
+    $IPTABLES -A OUTPUT -j ACCEPT -p icmp --icmp-type time-exceeded
+    $IPTABLES -A OUTPUT -j ACCEPT -p icmp --icmp-type port-unreachable
+
+    for TYPE in fragmentation-needed network-prohibited host-prohibited communication-prohibited; do
+	$IPTABLES -A OUTPUT -j ACCEPT -p icmp --icmp-type $TYPE
+    done
+
+    # Alle anderen ICMP-Packete sind boese
+    $IPTABLES -A OUTPUT -j ACCEPT -p icmp --icmp-type destination-unreachable
+
+    # Externe Dienste
+    log_success_msg "External services"
+    for SERVICES in $HOST_EXT_SERVICES ; do
+	HOST=`echo $SERVICES | $AWK -F, '{print $1}'`
+	PROTO=`echo $SERVICES | $AWK -F, '{print $2}'`
+	PORT=`echo $SERVICES | $AWK -F, '{print $3}'`
+
+	log_success_msg "    Opening $HOST:$PORT ($PROTO)"
+	$IPTABLES -A INPUT -j ACCEPT -m state --state NEW,ESTABLISHED,RELATED -d $HOST -p $PROTO --dport $PORT
+    done
+
+    # Vertrauenswuerdige Hosts
+    log_success_msg "Trusted services"
+    for SERVICES in $HOST_TRUSTED_SERVICES ; do
+	HOST=`echo $SERVICES | $AWK -F, '{print $1}'`
+	PROTO=`echo $SERVICES | $AWK -F, '{print $2}'`
+	PORT=`echo $SERVICES | $AWK -F, '{print $3}'`
+
+	log_success_msg "    Opening $PORT ($PROTO) for $HOST"
+	$IPTABLES -A INPUT -j ACCEPT -m state --state NEW,ESTABLISHED,RELATED -s $HOST -p $PROTO --dport $PORT
+    done
+
+    # VPS darf ins Internet
+    $IPTABLES -A INPUT -p tcp -m tcp --dport 1024:65535 ! --tcp-flags SYN,RST,ACK SYN -j ACCEPT
+    $IPTABLES -A INPUT -p udp -m udp --dport 1024:65535 -j ACCEPT
+	
+    for EXTIP in $HOST_EXT_IP ; do
+        $IPTABLES -A OUTPUT -s $EXTIP -j ACCEPT
+    done
+
+    $IPTABLES -A INPUT -m state --state ESTABLISHED,RELATED -p tcp -j ACCEPT
+    $IPTABLES -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+}
+
+stop_firewall() {
+    log_success_msg "Stopping firewall" "shutdown"
+    reset_rules
+}
+
+case "$1" in
+start)
+    start_firewall
+    ;;
+    
+stop)
+    stop_firewall
+    ;;
+
+status) 
+    $IPTABLES -L -nv --line-numbers
+    exit 0
+
+    ;;
+
+restart)
+    stop_firewall
+    start_firewall
+
+    ;;
+    
+*)
+    log_success_msg "Usage: /etc/init.d/firewall {start|stop|status}"
+    
+    exit 2
+    
+    ;;
+
+esac
